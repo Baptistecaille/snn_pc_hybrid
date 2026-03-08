@@ -97,6 +97,15 @@ class LIFNeuron(nn.Module):
             V_membrane : (batch, n_neurons) — potentiel membranaire après mise à jour
         """
         batch = I_syn.shape[0]
+        target_device = I_syn.device
+
+        if self.V.device != target_device:
+            self.V = self.V.to(target_device)
+            self.I_syn_state = self.I_syn_state.to(target_device)
+            self.t_last_spike = self.t_last_spike.to(target_device)
+            self.spike_history = [spike.to(target_device) for spike in self.spike_history]
+        if epsilon.device != target_device:
+            epsilon = epsilon.to(target_device)
 
         # Expansion de l'état interne pour le batch courant
         V = self.V.expand(batch, -1).clone()

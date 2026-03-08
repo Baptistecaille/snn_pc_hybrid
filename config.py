@@ -10,6 +10,15 @@ from typing import Optional
 import torch
 
 
+def _default_device() -> torch.device:
+    """Sélectionne le meilleur backend disponible pour l'hôte courant."""
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        return torch.device('mps')
+    return torch.device('cpu')
+
+
 @dataclass
 class SNNConfig:
     # ── Dynamique membranaire ────────────────────────────────────────────────
@@ -57,7 +66,7 @@ class SNNConfig:
 
     # ── Device ────────────────────────────────────────────────────────────────
     device: torch.device = field(
-        default_factory=lambda: torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        default_factory=_default_device
     )
 
     # ── Curriculum d'entraînement ─────────────────────────────────────────────

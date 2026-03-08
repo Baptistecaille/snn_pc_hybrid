@@ -122,6 +122,12 @@ class BrocaModule(nn.Module):
             - 'phase_coherence': float — cohérence de phase ∈ [0, 1]
         """
         batch = mu_wernicke.shape[0]
+        target_device = mu_wernicke.device
+
+        if self.mu_B.device != target_device:
+            self.mu_B = self.mu_B.to(target_device)
+        if x_context.device != target_device:
+            x_context = x_context.to(target_device)
 
         # ── 1. Projection du message sémantique ───────────────────────────────
         # Transforme le message de dim_arcuate en représentation dans dim_broca
@@ -249,7 +255,7 @@ class BrocaModule(nn.Module):
 
     def reset_state(self) -> None:
         """Réinitialise la représentation syntaxique et les neurones LIF."""
-        device = self.mu_B.device
+        device = next(self.parameters()).device
         self.mu_B = torch.zeros(1, self.config.dim_broca, device=device)
         self.lif_neurons.reset_state()
         self._epsilon_history = []

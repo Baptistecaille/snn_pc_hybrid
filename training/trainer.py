@@ -81,7 +81,7 @@ class CurriculumTrainer:
         self.config    = config
         self.clock     = OscillatoryClock(config)
 
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = config.device
         self._move_to_device()
 
         # Initialisation du fichier de log CSV
@@ -93,6 +93,7 @@ class CurriculumTrainer:
             'r_W', 'r_B', 'sync_loss', 'lr', 'elapsed_s',
         ])
         self._csv.writeheader()
+        self._log_file.flush()
 
         # Historique glissant pour les critères de passage (reset entre phases)
         self._history: dict[str, list] = {'F': [], 'r': []}
@@ -538,10 +539,16 @@ class CurriculumTrainer:
             pad_id = getattr(self.tokenizer, 'pad_token_id', 0)
             attention_mask = input_ids.ne(pad_id).long()
 
+        if input_ids.device.type == 'mps':
+            cpu_input_ids = input_ids.detach().to('cpu')
+            cpu_attention_mask = attention_mask.detach().to('cpu')
+            cpu_bow = self._token_ids_to_bow(cpu_input_ids, cpu_attention_mask)
+            return cpu_bow.to(self.device)
+
         valid_mask = attention_mask.bool()
         safe_ids = input_ids.masked_fill(~valid_mask, 0)
 
-        bow = torch.zeros(batch_size, vocab_size, device=self.device)
+        bow = torch.zeros(batch_size, vocab_size, device=input_ids.device)
         bow.scatter_add_(1, safe_ids, valid_mask.float())
 
         lengths = valid_mask.sum(dim=1, keepdim=True).clamp_min(1).float()

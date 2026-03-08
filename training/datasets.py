@@ -18,24 +18,53 @@ Architecture de chunking (WikiFrDataset) :
     pour présenter les exemples courts en premier (curriculum intra-phase).
 """
 
+from pathlib import Path
+
 import torch
 from torch.utils.data import Dataset, DataLoader
 
 
-def _resolve_wikipedia_config(preferred_config: str) -> str:
-    """Retourne une config Wikipedia FR valide pour la version installée de `datasets`."""
+def _cached_wikipedia_configs(cache_dir: str | None) -> list[str]:
+    """Liste les configs Wikipedia FR deja presentes dans le cache local."""
+    if not cache_dir:
+        return []
+
+    root = Path(cache_dir)
+    candidates = [root / 'wikipedia', root]
+    configs: set[str] = set()
+
+    for candidate in candidates:
+        if not candidate.exists() or not candidate.is_dir():
+            continue
+
+        for child in candidate.iterdir():
+            if child.is_dir() and child.name.endswith('.fr'):
+                configs.add(child.name)
+
+    return sorted(configs)
+
+
+def _resolve_wikipedia_config(preferred_config: str, cache_dir: str | None = None) -> str:
+    """Retourne une config Wikipedia FR exploitable, en preferant le cache local."""
+    cached_configs = _cached_wikipedia_configs(cache_dir)
+    if preferred_config in cached_configs:
+        return preferred_config
+
     try:
         from datasets import get_dataset_config_names
     except ImportError:
-        return preferred_config
-
-    try:
-        config_names = get_dataset_config_names('wikipedia', trust_remote_code=True)
-    except Exception:
-        return preferred_config
+        config_names = []
+    else:
+        try:
+            config_names = get_dataset_config_names('wikipedia')
+        except Exception:
+            config_names = []
 
     if preferred_config in config_names:
         return preferred_config
+
+    if cached_configs:
+        return cached_configs[-1]
 
     fr_configs = sorted(name for name in config_names if name.endswith('.fr'))
     if fr_configs:
@@ -94,8 +123,13 @@ class WikiFrDataset(Dataset):
                 "datasets est requis : pip install datasets>=2.18"
             ) from e
 
-        resolved_config = _resolve_wikipedia_config(config_name)
+        resolved_config = _resolve_wikipedia_config(config_name, cache_dir)
         streaming = max_articles is not None
+
+        if resolved_config != config_name:
+            print(
+                f"Config Wikipedia demandee '{config_name}' indisponible; utilisation de '{resolved_config}'"
+            )
 
         print(
             f"Chargement Wikipedia FR (config={resolved_config}, split={split}, cache={cache_dir}, streaming={streaming})..."
@@ -105,7 +139,6 @@ class WikiFrDataset(Dataset):
             resolved_config,
             split=split,
             cache_dir=cache_dir,
-            trust_remote_code=True,
             streaming=streaming,
         )
 
@@ -159,6 +192,7 @@ class WikiFrDataset(Dataset):
                 truncation=False,
                 return_tensors='pt',
                 add_special_tokens=False,
+                verbose=False,
             )['input_ids'][0]   # (n_tokens,)
 
             # Découpage en fenêtres non-chevauchantes
@@ -327,6 +361,7 @@ class OSCARFrDataset(Dataset):
                 max_length=self.max_tokens,
                 padding='max_length',
                 return_tensors='pt',
+                verbose=False,
             )
             self._buffer.append({
                 'input_ids':      tokens['input_ids'][0],
