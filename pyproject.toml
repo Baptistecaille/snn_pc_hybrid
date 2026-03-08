@@ -1,0 +1,17 @@
+[project]
+name = "snn-pc-hybrid"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.1",
+    "torch-geometric>=2.4",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "tqdm>=4.66",
+    "scipy>=1.11",
+    "networkx>=3.2",
+    "jupyter>=1.0",
+    "ipykernel>=6.27",
+]

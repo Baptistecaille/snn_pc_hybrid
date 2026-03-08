@@ -1,0 +1,20 @@
+torch>=2.1
+torch-geometric>=2.4
+numpy>=1.26
+matplotlib>=3.8
+tqdm>=4.66
+scipy>=1.11
+networkx>=3.2
+jupyter>=1.0
+ipykernel>=6.27
+
+# ── Curriculum training (Wikipedia FR + OSCAR) ────────────────────────────────
+datasets>=2.18
+transformers>=4.38
+sentencepiece>=0.1.99
+pandas>=2.1
+seaborn>=0.13
+
+# ── Optionnel : accélère les téléchargements HuggingFace ─────────────────────
+# Activer avec : HF_HUB_ENABLE_HF_TRANSFER=1 python run_training.py
+hf_transfer>=0.1.6

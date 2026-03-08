@@ -1,0 +1,21 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+
+# Local tooling
+.DS_Store
+
+# Training and experiment artifacts
+cache/
+checkpoints/
+logs/
+results/
