@@ -110,6 +110,14 @@ class WernickeModule(nn.Module):
             - 'prediction': (batch, dim_arcuate)  — message vers Broca
         """
         batch = x_input.shape[0]
+        target_device = x_input.device
+
+        if self.mu_W.device != target_device:
+            self.mu_W = self.mu_W.to(target_device)
+        if self.mu_prior.device != target_device:
+            self.mu_prior = self.mu_prior.to(target_device)
+        if mu_prior.device != target_device:
+            mu_prior = mu_prior.to(target_device)
 
         # ── 1. Projection de l'input sensoriel ───────────────────────────────
         # x_W = W_in · x_input + b_in : observation projetée dans l'espace sémantique
@@ -167,7 +175,7 @@ class WernickeModule(nn.Module):
 
     def reset_state(self) -> None:
         """Réinitialise la représentation sémantique et les neurones LIF."""
-        device = self.mu_W.device
+        device = next(self.parameters()).device
         self.mu_W = torch.zeros(1, self.config.dim_wernicke, device=device)
         self.lif_neurons.reset_state()
 
