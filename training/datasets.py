@@ -29,31 +29,16 @@ WIKIPEDIA_DATASET_ID = os.environ.get('SNN_WIKIPEDIA_DATASET_ID', 'wikimedia/wik
 
 
 def _build_hf_download_config():
-    """Construit une configuration de telechargement HF si des timeouts sont fournis."""
-    timeout = os.environ.get('HF_HUB_DOWNLOAD_TIMEOUT')
-    etag_timeout = os.environ.get('HF_HUB_ETAG_TIMEOUT')
-
-    if timeout is None and etag_timeout is None:
-        return None
-
-    try:
-        from datasets import DownloadConfig
-    except ImportError:
-        return None
-
-    kwargs = {}
-    if timeout is not None:
-        try:
-            kwargs['download_timeout'] = float(timeout)
-        except ValueError:
-            pass
-    if etag_timeout is not None:
-        try:
-            kwargs['etag_timeout'] = float(etag_timeout)
-        except ValueError:
-            pass
-
-    return DownloadConfig(**kwargs) if kwargs else None
+    """Construit une configuration de telechargement HF si des timeouts sont fournis.
+    
+    Note: La plupart des paramètres de timeout ne sont plus supportés dans
+    les versions récentes de datasets (>=2.18). Cette fonction retourne None.
+    Les timeouts peuvent être configurés via HF_HUB_TIMEOUT si nécessaire.
+    """
+    # Les paramètres download_timeout et etag_timeout ne sont plus supportés
+    # dans les versions récentes de datasets. On retourne None pour utiliser
+    # la configuration par défaut.
+    return None
 
 
 def _cached_wikipedia_configs(cache_dir: str | None) -> list[str]:
