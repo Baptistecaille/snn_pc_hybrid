@@ -162,6 +162,29 @@ class TestLIFNeuron:
         assert len(neuron.spike_history) == 0, "Historique non vidé"
         assert neuron.current_time == 0.0, f"Temps non réinitialisé : {neuron.current_time}"
 
+    def test_state_is_tracked_for_full_batch(self, setup):
+        """L'état interne doit conserver tout le batch, pas seulement le premier élément."""
+        neuron, config, n_neurons = setup
+        batch = 3
+        I_syn = torch.randn(batch, n_neurons)
+        epsilon = torch.randn(batch, n_neurons)
+
+        spikes, V = neuron(I_syn, epsilon, phase=0.0)
+
+        assert neuron.V.shape == (batch, n_neurons)
+        assert neuron.I_syn_state.shape == (batch, n_neurons)
+        assert neuron.t_last_spike.shape == (batch, n_neurons)
+        assert torch.allclose(neuron.V, V.detach())
+
+    def test_reset_state_respects_batch_size(self, setup):
+        """reset_state(batch_size=N) doit redimensionner les buffers internes."""
+        neuron, config, n_neurons = setup
+        neuron.reset_state(batch_size=5)
+
+        assert neuron.V.shape == (5, n_neurons)
+        assert neuron.I_syn_state.shape == (5, n_neurons)
+        assert neuron.t_last_spike.shape == (5, n_neurons)
+
     def test_gradient_flows(self, setup):
         """Les gradients doivent se propager à travers les spikes (surrogate)."""
         neuron, config, n_neurons = setup

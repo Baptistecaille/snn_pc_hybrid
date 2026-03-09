@@ -26,6 +26,7 @@ Usage :
 
 import csv
 import time
+from contextlib import nullcontext
 import torch
 import torch.optim as optim
 from pathlib import Path
@@ -152,6 +153,89 @@ class CurriculumTrainer:
 
         self._log_file.close()
         return results
+
+    def infer_batch(
+        self,
+        texts: list[str],
+        top_k: int = 10,
+        max_length: int | None = None,
+        reset_state: bool = True,
+        use_mixed_precision: bool | None = None,
+    ) -> dict:
+        """
+        Exécute une inférence sur plusieurs textes en parallèle.
+
+        Cette méthode vectorise la tokenisation et tout le passage Wernicke →
+        Arcuate → Broca sur le batch complet afin d'exploiter le GPU plus
+        efficacement que des appels séquentiels texte par texte.
+        """
+        if not texts:
+            raise ValueError('texts ne doit pas être vide.')
+
+        batch_size = len(texts)
+        if reset_state:
+            self.wernicke.reset_state(batch_size=batch_size)
+            self.broca.reset_state(batch_size=batch_size)
+            self.arcuate.reset_state()
+            self.clock.reset()
+
+        tokenized = self.tokenizer(
+            texts,
+            return_tensors='pt',
+            padding=True,
+            truncation=True,
+            max_length=max_length,
+        )
+        input_ids = tokenized['input_ids'].to(self.device).long()
+        attention_mask = tokenized.get('attention_mask')
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(self.device)
+
+        x_input = self._token_ids_to_bow(input_ids, attention_mask)
+        mu_prior = torch.zeros(batch_size, self.config.dim_wernicke, device=self.device)
+        x_context = torch.zeros(batch_size, self.config.dim_broca, device=self.device)
+
+        if use_mixed_precision is None:
+            use_mixed_precision = self.device.type == 'cuda'
+
+        autocast_context = (
+            torch.autocast(device_type='cuda', dtype=torch.float16)
+            if use_mixed_precision and self.device.type == 'cuda'
+            else nullcontext()
+        )
+
+        with torch.inference_mode():
+            with autocast_context:
+                out_W = self.wernicke(
+                    x_input=x_input,
+                    mu_prior=mu_prior,
+                    clock=self.clock,
+                )
+                msg_W2B, reweight = self.arcuate.transmit(
+                    message=out_W['prediction'],
+                    direction='W2B',
+                    visit_history=['W'],
+                )
+                out_B = self.broca(
+                    mu_wernicke=msg_W2B,
+                    x_context=x_context,
+                    clock=self.clock,
+                )
+
+            logits = out_B['logits'].float()
+            k = min(top_k, logits.shape[-1])
+            top_probabilities, top_ids = logits.softmax(dim=-1).topk(k, dim=-1)
+
+        return {
+            'texts': list(texts),
+            'top_ids': top_ids.cpu().tolist(),
+            'top_tokens': [self.tokenizer.convert_ids_to_tokens(ids) for ids in top_ids.cpu().tolist()],
+            'top_probabilities': top_probabilities.cpu().tolist(),
+            'broca_state': out_B['state'],
+            'phase_coherence': float(out_B['phase_coherence']),
+            'epsilon_norms': out_B['epsilon'].norm(dim=-1).cpu().tolist(),
+            'message_reweight': float(reweight),
+        }
 
     # ── Configuration par phase ────────────────────────────────────────────────
 

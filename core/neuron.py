@@ -68,6 +68,21 @@ class LIFNeuron(nn.Module):
         self.register_buffer('t_last_spike', torch.full((1, n_neurons), -1e6))
         self.current_time: float = 0.0
 
+    def _ensure_state_shape(self, batch_size: int, device: torch.device) -> None:
+        if self.V.device != device:
+            self.V = self.V.to(device)
+            self.I_syn_state = self.I_syn_state.to(device)
+            self.t_last_spike = self.t_last_spike.to(device)
+            self.spike_history = [spike.to(device) for spike in self.spike_history]
+
+        if self.V.shape[0] == batch_size:
+            return
+
+        self.V = torch.full((batch_size, self.n_neurons), self.config.v_rest, device=device)
+        self.I_syn_state = torch.zeros(batch_size, self.n_neurons, device=device)
+        self.t_last_spike = torch.full((batch_size, self.n_neurons), -1e6, device=device)
+        self.spike_history = []
+
     def forward(
         self,
         I_syn: torch.Tensor,
@@ -99,17 +114,13 @@ class LIFNeuron(nn.Module):
         batch = I_syn.shape[0]
         target_device = I_syn.device
 
-        if self.V.device != target_device:
-            self.V = self.V.to(target_device)
-            self.I_syn_state = self.I_syn_state.to(target_device)
-            self.t_last_spike = self.t_last_spike.to(target_device)
-            self.spike_history = [spike.to(target_device) for spike in self.spike_history]
+        self._ensure_state_shape(batch, target_device)
         if epsilon.device != target_device:
             epsilon = epsilon.to(target_device)
 
         # Expansion de l'état interne pour le batch courant
-        V = self.V.expand(batch, -1).clone()
-        I_syn_state = self.I_syn_state.expand(batch, -1).clone()
+        V = self.V.clone()
+        I_syn_state = self.I_syn_state.clone()
 
         # ── 1. Mise à jour du courant synaptique (filtre passe-bas d'ordre 1) ──
         # Discrétisation : I(t+dt) = (1 - dt/τ_syn)·I(t) + I_entrant(t)
@@ -136,11 +147,9 @@ class LIFNeuron(nn.Module):
         # V_reset si spike, sinon V_new (opération différentiable car spikes ∈ {0,1})
         V_new = spikes * self.config.v_reset + (1.0 - spikes) * V_new
 
-        # ── 5. Mise à jour des états internes (premier élément du batch comme référence) ──
-        # Note : on stocke le premier batch pour la continuité temporelle.
-        # En production, on passerait l'état complet batch comme buffer.
-        self.V = V_new[0:1].detach()
-        self.I_syn_state = I_syn_state[0:1].detach()
+        # ── 5. Mise à jour des états internes pour tout le batch ──
+        self.V = V_new.detach()
+        self.I_syn_state = I_syn_state.detach()
 
         # Mise à jour de l'historique des spikes et du temps
         self.spike_history.append(spikes.detach())
@@ -148,7 +157,7 @@ class LIFNeuron(nn.Module):
             self.spike_history.pop(0)
 
         # Mise à jour des timestamps de dernier spike (pour STDP)
-        fired = (spikes[0:1] > 0.5).float()
+        fired = (spikes > 0.5).float()
         self.t_last_spike = fired * self.current_time + (1.0 - fired) * self.t_last_spike
         self.current_time += self.config.dt
 
@@ -162,10 +171,10 @@ class LIFNeuron(nn.Module):
             batch_size : taille du batch (pour l'initialisation correcte des buffers)
         """
         device = self.V.device
-        self.V = torch.full((1, self.n_neurons), self.config.v_rest, device=device)
-        self.I_syn_state = torch.zeros(1, self.n_neurons, device=device)
+        self.V = torch.full((batch_size, self.n_neurons), self.config.v_rest, device=device)
+        self.I_syn_state = torch.zeros(batch_size, self.n_neurons, device=device)
         self.spike_history = []
-        self.t_last_spike = torch.full((1, self.n_neurons), -1e6, device=device)
+        self.t_last_spike = torch.full((batch_size, self.n_neurons), -1e6, device=device)
         self.current_time = 0.0
 
     def get_firing_rate(self, window_ms: float = 50.0) -> torch.Tensor:

@@ -79,6 +79,17 @@ class WernickeModule(nn.Module):
         # En l'absence d'input, μ_W est attiré vers ce prior par le terme -ε_W
         self.register_buffer('mu_prior', torch.zeros(1, config.dim_wernicke))
 
+    def _ensure_state_shape(self, batch_size: int, device: torch.device) -> None:
+        if self.mu_W.device != device:
+            self.mu_W = self.mu_W.to(device)
+        if self.mu_prior.device != device:
+            self.mu_prior = self.mu_prior.to(device)
+
+        if self.mu_W.shape[0] != batch_size:
+            self.mu_W = torch.zeros(batch_size, self.config.dim_wernicke, device=device)
+        if self.mu_prior.shape[0] != batch_size:
+            self.mu_prior = torch.zeros(batch_size, self.config.dim_wernicke, device=device)
+
     def forward(
         self,
         x_input: torch.Tensor,
@@ -112,10 +123,7 @@ class WernickeModule(nn.Module):
         batch = x_input.shape[0]
         target_device = x_input.device
 
-        if self.mu_W.device != target_device:
-            self.mu_W = self.mu_W.to(target_device)
-        if self.mu_prior.device != target_device:
-            self.mu_prior = self.mu_prior.to(target_device)
+        self._ensure_state_shape(batch, target_device)
         if mu_prior.device != target_device:
             mu_prior = mu_prior.to(target_device)
 
@@ -125,7 +133,7 @@ class WernickeModule(nn.Module):
 
         # ── 2. Inférence itérative de μ_W ─────────────────────────────────────
         # On part de l'état courant μ_W et on itère pour minimiser ε_W
-        mu = self.mu_W.expand(batch, -1).clone()  # (batch, dim_wernicke)
+        mu = self.mu_W.clone()  # (batch, dim_wernicke)
 
         for _ in range(self.config.n_inference_steps):
             # Prédiction de l'observation depuis la représentation
@@ -150,7 +158,7 @@ class WernickeModule(nn.Module):
         epsilon_final = x_W - x_pred_final  # (batch, dim_wernicke)
 
         # ── 3. Mise à jour de l'état interne μ_W ─────────────────────────────
-        self.mu_W = mu[0:1].detach()  # conserver pour le pas suivant
+        self.mu_W = mu.detach()
 
         # ── 4. Génération des spikes via couche LIF ───────────────────────────
         # Le courant d'entrée est la norme de μ (activité sémantique)
@@ -173,11 +181,12 @@ class WernickeModule(nn.Module):
             'V_membrane': V_membrane,
         }
 
-    def reset_state(self) -> None:
+    def reset_state(self, batch_size: int = 1) -> None:
         """Réinitialise la représentation sémantique et les neurones LIF."""
         device = next(self.parameters()).device
-        self.mu_W = torch.zeros(1, self.config.dim_wernicke, device=device)
-        self.lif_neurons.reset_state()
+        self.mu_W = torch.zeros(batch_size, self.config.dim_wernicke, device=device)
+        self.mu_prior = torch.zeros(batch_size, self.config.dim_wernicke, device=device)
+        self.lif_neurons.reset_state(batch_size=batch_size)
 
     # ── Curriculum : contrôle du gel des paramètres ───────────────────────────
 

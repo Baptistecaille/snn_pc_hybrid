@@ -90,6 +90,14 @@ class BrocaModule(nn.Module):
         # Historique des erreurs pour la détection d'oscillations
         self._epsilon_history: list[float] = []
 
+    def _ensure_state_shape(self, batch_size: int, device: torch.device) -> None:
+        if self.mu_B.device != device:
+            self.mu_B = self.mu_B.to(device)
+
+        if self.mu_B.shape[0] != batch_size:
+            self.mu_B = torch.zeros(batch_size, self.config.dim_broca, device=device)
+            self._epsilon_history = []
+
     def forward(
         self,
         mu_wernicke: torch.Tensor,
@@ -124,8 +132,7 @@ class BrocaModule(nn.Module):
         batch = mu_wernicke.shape[0]
         target_device = mu_wernicke.device
 
-        if self.mu_B.device != target_device:
-            self.mu_B = self.mu_B.to(target_device)
+        self._ensure_state_shape(batch, target_device)
         if x_context.device != target_device:
             x_context = x_context.to(target_device)
 
@@ -148,7 +155,7 @@ class BrocaModule(nn.Module):
         # ── 3. Inférence itérative de μ_B ─────────────────────────────────────
         # L'inférence minimise : F_B = ||ε_B||² = ||x_B - f(μ_B)||²
         # La mise à jour est : dμ_B/dt = η_pc · ε_B + correction sémantique
-        mu = self.mu_B.expand(batch, -1).clone()  # (batch, dim_broca)
+        mu = self.mu_B.clone()  # (batch, dim_broca)
 
         for step in range(self.config.n_inference_steps):
             # Prédiction de l'observation syntaxique depuis μ_B
@@ -170,7 +177,7 @@ class BrocaModule(nn.Module):
         epsilon_final = x_B - x_B_pred_final  # (batch, dim_broca)
 
         # ── 4. Mise à jour de l'état interne ──────────────────────────────────
-        self.mu_B = mu[0:1].detach()
+        self.mu_B = mu.detach()
 
         # ── 5. Génération des logits ──────────────────────────────────────────
         logits = self.output_head(mu)  # (batch, vocab_size)
@@ -253,11 +260,12 @@ class BrocaModule(nn.Module):
         gamma_amp = clock.get_gamma_amplitude()
         return float(active_fraction * gamma_amp)
 
-    def reset_state(self) -> None:
+    def reset_state(self, batch_size: int = 1) -> None:
         """Réinitialise la représentation syntaxique et les neurones LIF."""
         device = next(self.parameters()).device
-        self.mu_B = torch.zeros(1, self.config.dim_broca, device=device)
-        self.lif_neurons.reset_state()
+        self.mu_B = torch.zeros(batch_size, self.config.dim_broca, device=device)
+        self._epsilon_history = []
+        self.lif_neurons.reset_state(batch_size=batch_size)
         self._epsilon_history = []
 
     # ── Curriculum : contrôle du gel des paramètres ───────────────────────────
