@@ -81,7 +81,7 @@ class CurriculumTrainer:
         self.config    = config
         self.clock     = OscillatoryClock(config)
 
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = config.device
         self._move_to_device()
 
         # Initialisation du fichier de log CSV
@@ -93,6 +93,7 @@ class CurriculumTrainer:
             'r_W', 'r_B', 'sync_loss', 'lr', 'elapsed_s',
         ])
         self._csv.writeheader()
+        self._log_file.flush()
 
         # Historique glissant pour les critères de passage (reset entre phases)
         self._history: dict[str, list] = {'F': [], 'r': []}

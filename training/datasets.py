@@ -192,6 +192,7 @@ class WikiFrDataset(Dataset):
                 truncation=False,
                 return_tensors='pt',
                 add_special_tokens=False,
+                verbose=False,
             )['input_ids'][0]   # (n_tokens,)
 
             # Découpage en fenêtres non-chevauchantes
@@ -360,6 +361,7 @@ class OSCARFrDataset(Dataset):
                 max_length=self.max_tokens,
                 padding='max_length',
                 return_tensors='pt',
+                verbose=False,
             )
             self._buffer.append({
                 'input_ids':      tokens['input_ids'][0],
