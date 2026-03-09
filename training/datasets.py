@@ -18,10 +18,42 @@ Architecture de chunking (WikiFrDataset) :
     pour présenter les exemples courts en premier (curriculum intra-phase).
 """
 
+import os
 from pathlib import Path
 
 import torch
 from torch.utils.data import Dataset, DataLoader
+
+
+WIKIPEDIA_DATASET_ID = os.environ.get('SNN_WIKIPEDIA_DATASET_ID', 'wikimedia/wikipedia')
+
+
+def _build_hf_download_config():
+    """Construit une configuration de telechargement HF si des timeouts sont fournis."""
+    timeout = os.environ.get('HF_HUB_DOWNLOAD_TIMEOUT')
+    etag_timeout = os.environ.get('HF_HUB_ETAG_TIMEOUT')
+
+    if timeout is None and etag_timeout is None:
+        return None
+
+    try:
+        from datasets import DownloadConfig
+    except ImportError:
+        return None
+
+    kwargs = {}
+    if timeout is not None:
+        try:
+            kwargs['download_timeout'] = float(timeout)
+        except ValueError:
+            pass
+    if etag_timeout is not None:
+        try:
+            kwargs['etag_timeout'] = float(etag_timeout)
+        except ValueError:
+            pass
+
+    return DownloadConfig(**kwargs) if kwargs else None
 
 
 def _cached_wikipedia_configs(cache_dir: str | None) -> list[str]:
@@ -56,7 +88,7 @@ def _resolve_wikipedia_config(preferred_config: str, cache_dir: str | None = Non
         config_names = []
     else:
         try:
-            config_names = get_dataset_config_names('wikipedia')
+            config_names = get_dataset_config_names(WIKIPEDIA_DATASET_ID)
         except Exception:
             config_names = []
 
@@ -134,12 +166,19 @@ class WikiFrDataset(Dataset):
         print(
             f"Chargement Wikipedia FR (config={resolved_config}, split={split}, cache={cache_dir}, streaming={streaming})..."
         )
+        load_kwargs = {
+            'split': split,
+            'cache_dir': cache_dir,
+            'streaming': streaming,
+        }
+        download_config = _build_hf_download_config()
+        if download_config is not None:
+            load_kwargs['download_config'] = download_config
+
         raw = load_dataset(
-            'wikipedia',
+            WIKIPEDIA_DATASET_ID,
             resolved_config,
-            split=split,
-            cache_dir=cache_dir,
-            streaming=streaming,
+            **load_kwargs,
         )
 
         # Tokenisation et chunking de tous les articles
